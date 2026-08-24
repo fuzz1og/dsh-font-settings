@@ -8,15 +8,18 @@ DeepSeek Harness Web UI 插件：**字体偏好设置**——在「设置 → �
 dsh plugin --profile web add github:fuzz1og/dsh-font-settings
 ```
 
-然后在 `cordis.patch.yml`（profile patch 层）插入：
-
-```yaml
-- insert:
-    - id: font-settings
-      name: 'dsh-font-settings'
-```
+该包声明了 `dsh.bundle.patch`，`dsh plugin add` 会自动把它加入 profile 的
+`dsh.profile.bundles`，无需手改任何 patch 文件。
 
 **重启 DSH 后生效。**
+
+> 旧版（无 `dsh.bundle.patch`）需要手动在 `cordis.patch.yml` 插入挂载行：
+> ```yaml
+> - insert:
+>     - id: font-settings
+>       name: 'dsh-font-settings'
+> ```
+> 新安装无需此步骤。
 
 ## 工作原理
 

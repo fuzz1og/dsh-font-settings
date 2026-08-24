@@ -1,0 +1,19 @@
+# dsh-font-settings bundle patch: mount this plugin into a profile's
+# composition tree when the profile carries it in `dsh.profile.bundles`.
+#
+# Installed through the official CLI:
+#
+#   dsh plugin --profile <name> add dsh-font-settings
+#
+# the reconcile step appends this package to the profile's
+# `dsh.profile.bundles` because this package.json declares
+# `dsh.bundle.patch`. At boot, app-boot applies every bundle's patch list
+# in bundle order; this insert list is what actually mounts the
+# font-settings row — no manual patch editing needed.
+#
+# All row config stays at schema defaults. To tune a value, override this
+# row's config by id in the profile's own cordis.patch.yml user layer — do
+# NOT insert a second same-id row.
+- insert:
+    - id: font-settings
+      name: 'dsh-font-settings'
