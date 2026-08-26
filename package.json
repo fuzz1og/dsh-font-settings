@@ -1,7 +1,7 @@
 {
   "name": "dsh-font-settings",
   "version": "0.1.0",
-  "description": "WebUI plugin: per-user font preferences (UI font + code font) as a Settings → General row",
+  "description": "WebUI plugin: per-user font preferences (UI font + code font) as a Settings \u2192 General row",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -10,6 +10,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "cordis.patch.yml",
     "lib"
   ],
   "license": "MIT",
