@@ -1,6 +1,6 @@
 {
   "name": "dsh-font-settings",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "WebUI plugin: per-user font preferences (UI font + code font) as a Settings \u2192 General row",
   "type": "module",
   "main": "lib/index.js",
