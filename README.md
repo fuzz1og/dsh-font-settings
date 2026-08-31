@@ -13,6 +13,10 @@ dsh plugin --profile web add github:fuzz1og/dsh-font-settings
 
 **重启 DSH 后生效。**
 
+> 兼容性：适配 dsh ≥ 0.1.2-alpha.2（客户端 store 从 `@deepseek-ai/dsh-client-store`
+> 取——`@deepseek-ai/dsh-client-runtime` 已移除；宿主侧 `settings.register`
+> 直接传命名空间字符串——`settingsNamespace()` 已移除）。
+
 > 旧版（无 `dsh.bundle.patch`）需要手动在 `cordis.patch.yml` 插入挂载行：
 > ```yaml
 > - insert:
