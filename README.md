@@ -30,9 +30,57 @@ dsh plugin --profile web add github:fuzz1og/dsh-font-settings
 | 环节 | 说明 |
 | --- | --- |
 | 宿主半区 | 拥有 `ui-font` 设置命名空间（持久化进 `$DSH_HOME/settings.yaml`），提供三条同源路由：`GET/POST /font-settings` 读写设置、`GET /font-settings/fonts` 枚举已安装系统字体 |
-| 系统字体枚举 | 浏览器无法列出已安装字体，且系统显示名与 CSS 家族名常不一致——宿主扫描各平台字体目录，解析每个字体文件的 sfnt name 表（nameID 16/1，UTF-16BE）取真实家族名；TTC 集合读取第一个 face；并行扫描 + 10 分钟缓存（过期条目先返回、后台重扫，启动时预热）。平台目录见下节 |
-| 客户端半区 | 通过主题服务的 `overrideTokens()` 叠加两个根 CSS 变量（`--dsw-font-family` / `--ds-font-family-code`），所有 `--dsw-font-*` 排版 token 都引用它们 |
+| 系统字体枚举 | 浏览器无法列出已安装字体，且系统显示名与 CSS 家族名常不一致——宿主扫描各平台字体目录，解析每个字体文件的 sfnt name 表（nameID 16/1 取家族名，nameID 4/6 取 `local()` 可用的 FullName/PostScript 名，并从 `OS/2`/`head` 取字重与斜体），按家族聚合出 face 列表；TTC 集合读取第一个 face；并行扫描 + 10 分钟缓存（过期条目先返回、后台重扫，启动时预热）。平台目录见下节 |
+| 客户端半区 | 通过主题服务的 `overrideTokens()` 叠加两个根 CSS 变量（`--dsw-font-family` / `--ds-font-family-code`），所有 `--dsw-font-*` 排版 token 都引用它们；此外另注入一张 `@font-face` 别名表覆盖侧边栏终端（见下节） |
 | 依赖 | `webServer` + `@deepseek-ai/dsh-settings` + `@deepseek-ai/schemastery` |
+
+## 终端字体覆盖（0.3.0+）
+
+侧边栏终端（`dsh-client-ui-sidebar-terminal`）用一行写死的字体栈构造 xterm：
+`ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`。它**不引用任何 dsh 字体
+token**，所以主题覆盖层对它完全无效——这就是「设置了等宽字体但终端没变」的原因。
+
+该栈里 `ui-monospace` 在 Windows / Linux 的 Chromium 上都解析不到任何字体，于是
+实际生效的永远是 `Consolas`（在没装 Consolas 的机器上则是 `monospace` 通用族）。
+
+修法是注入 `@font-face` 改写这个栈里的具体家族名（`ui-monospace`、`SFMono-Regular`、
+`Menlo`、`Consolas`），把它们指向所选字体的各个字面：
+
+```css
+@font-face{font-family:ui-monospace;src:local('Maple Mono NF CN Regular'),local('MapleMono-NF-CN-Regular');font-weight:400;font-style:normal}
+/* … 同法为其余三个家族名生成 regular/bold/italic 各一条 … */
+```
+
+通用关键字 `monospace` **无法**被 `@font-face` 遮蔽（内核按浏览器自身的等宽字体偏好
+解析，实测宽度不动），所以不列出它。
+
+### `local()` 只认 FullName / PostScript，写家族名会静默失败
+
+`local()` 匹配的是 **FullName（nameID 4）** 和 **PostScript 名（nameID 6）**，
+不是家族名（nameID 1），也不是排版家族名（nameID 16）。传家族名不会报任何错，只是
+永远匹配不上，终端于是悄无声息地回退到栈里的下一个家族。以 JetBrainsMono Nerd Font
+为例：
+
+| `local()` 实参 | 来源 | 结果 |
+| --- | --- | --- |
+| `JetBrainsMono Nerd Font` | nameID 16 | ✗ 失败 |
+| `JetBrainsMono NF` | nameID 1 | ✗ 失败 |
+| `JetBrainsMono NF Regular` | nameID 4 | ✓ |
+| `JetBrainsMonoNF-Regular` | nameID 6 | ✓ |
+
+因此宿主侧会解析每个字体文件的 `name` 表，把每个 face 的 FullName 与 PostScript 名
+一起下发给客户端，用它们生成 `local()`，并按 `OS/2`/`head` 表补上 `font-weight` /
+`font-style` 描述符。没有枚举到 face 时（手输自定义栈、或枚举路由不可用）只遮蔽
+`ui-monospace` 并退回家族名：在 Windows / Linux 上它本来也解析不到，失败不损失任何
+回退；而拿 `Consolas` 去赌就可能损失，所以不做。
+
+### 已知限制
+
+- `ui-monospace` / `Consolas` 等家族名被全局改写，因此选字面板里那几行「以自身字体
+  预览」的示例文字也会跟着变；属于外观副作用，不影响功能。
+- 已经打开的终端会立刻重绘成新字体（CSS 实时重解析），但 xterm 的单元格宽度是在
+  挂载和容器尺寸变化时测量的，所以**可能要等一次尺寸变化（拖动/折叠侧边栏、开新
+  终端）才会完全对齐**。这是终端自身不监听字体变化的限制，插件改不到。
 
 ## 平台支持（0.2.0+）
 
