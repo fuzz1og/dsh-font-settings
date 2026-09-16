@@ -30,7 +30,7 @@ dsh plugin --profile web add github:fuzz1og/dsh-font-settings
 | 环节 | 说明 |
 | --- | --- |
 | 宿主半区 | 拥有 `ui-font` 设置命名空间（持久化进 `$DSH_HOME/settings.yaml`），提供三条同源路由：`GET/POST /font-settings` 读写设置、`GET /font-settings/fonts` 枚举已安装系统字体 |
-| 系统字体枚举 | 浏览器无法列出已安装字体，且系统显示名与 CSS 家族名常不一致——宿主扫描各平台字体目录，解析每个字体文件的 sfnt name 表（nameID 16/1 取家族名，nameID 4/6 取 `local()` 可用的 FullName/PostScript 名，并从 `OS/2`/`head` 取字重与斜体），按家族聚合出 face 列表；TTC 集合读取第一个 face；并行扫描 + 10 分钟缓存（过期条目先返回、后台重扫，启动时预热）。平台目录见下节 |
+| 系统字体枚举 | 浏览器无法列出已安装字体，且系统显示名与 CSS 家族名常不一致——宿主扫描各平台字体目录，解析每个字体文件的 sfnt name 表（nameID 16/1 取家族名，nameID 4/6 取 `local()` 可用的 FullName/PostScript 名，并从 `OS/2`/`head` 取字重与斜体），再按**角色**为每个家族挑出终端真正会请求的 regular/bold 字面（见「字重」一节）；TTC 集合读取第一个 face；并行扫描 + 10 分钟缓存（过期条目先返回、后台重扫，启动时预热）。平台目录见下节 |
 | 客户端半区 | 通过主题服务的 `overrideTokens()` 叠加两个根 CSS 变量（`--dsw-font-family` / `--ds-font-family-code`），所有 `--dsw-font-*` 排版 token 都引用它们；此外另注入一张 `@font-face` 别名表覆盖侧边栏终端的字体与字号（见下节） |
 | 依赖 | `webServer` + `@deepseek-ai/dsh-settings` + `@deepseek-ai/schemastery` |
 
@@ -73,6 +73,35 @@ token**，所以主题覆盖层对它完全无效——这就是「设置了等�
 `font-style` 描述符。没有枚举到 face 时（手输自定义栈、或枚举路由不可用）只遮蔽
 `ui-monospace` 并退回家族名：在 Windows / Linux 上它本来也解析不到，失败不损失任何
 回退；而拿 `Consolas` 去赌就可能损失，所以不做。
+
+### 字重：按角色挑 face，不能按字重排序截断（0.4.1 修复）
+
+一个家族可能带几十个字面。例如 **NotoSansM Nerd Font Mono 有 36 个文件**：9 个字重 ×
+4 种宽度（正常 / Cond / ExtCond / SemCond），斜体 0 个。而终端只请求两种字重——
+xterm 基础文字用 `fontWeight: normal`、粗体单元格用 `fontWeightBold: bold`——其余全是
+无用负担。
+
+0.4.0 及更早的实现把每个家族的字面**按字重升序排序后截断到 8 个**，这是错的：最轻的
+那批变体自己就能占满全部名额，Regular 和 Bold 被整个挤掉，于是 400 请求匹配不到任何
+face，只能取最近的 250，终端就"太细"了。NotoSansM NFM 正是如此——它 **8 个 weight=250
+的字面（ExtraLight / Thin × 4 种宽度）刚好填满 8 个名额**，`NotoSansM NFM Reg` 和
+`NotoSansM NFM Bold` 都没进列表。
+
+现在改为**按角色挑选**：对「正常」和「斜体」两组，各自取**正常宽度**下最接近 400 和
+最接近 700 的字面，并把它们**重新标记为它们要满足的字重**（而不是字体文件自称的字重）。
+只有当 bold 与 regular 不是同一个字面时才输出 bold，否则单字面家族仍由浏览器合成粗体，
+而不是拿 regular 冒充 bold。
+
+用该字体真实文件做的墨迹像素对照（`MonoWeight` @48px，值越大越粗）：
+
+| 单独声明为 400 的参考字重 | 墨迹 | | 终端请求 `weight:400` | 墨迹 | 实际命中 |
+| --- | --- | --- | --- | --- | --- |
+| Thin(100) | 1800 | | 旧 CSS（8×250） | 1754 | **≈ Thin(100)** ← 太细 |
+| ExtraLight(200) | 2271 | | 新 CSS（400/700） | 3896 | **= Regular(400)** |
+| Regular(400) | 3896 | | | | |
+| Bold(700) | 5468 | | 粗体单元格：旧 3379 → 新 5468 | | **= Bold(700)** |
+
+顺带的好处：每家族只留 ≤4 个 face，整个枚举 payload 从约 120KB 降到 **35KB**。
 
 ### 终端字号（0.4.0+）
 
