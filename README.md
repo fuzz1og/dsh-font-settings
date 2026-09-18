@@ -37,6 +37,44 @@ dsh plugin --profile web add github:fuzz1og/dsh-font-settings
   不使用 `*` 冒充“匹配全部预发布”。后续新版本预发布仍须重新核对。
 - 本地源码测试通过不等于 profile 已安装或浏览器已加载，安装后重启 DSH 并刷新 GUI。
 
+## 依赖缺失不再拖垮 DSH 启动（0.4.3+）
+
+**症状**：重启后 DSH 起不来，报
+
+```
+failed to import loader entry font-settings (dsh-font-settings):
+Cannot find package '@deepseek-ai/schemastery' imported from /home/tomy/daily/dsh-font-settings/lib/index.js
+```
+
+**原因**：profile 把这个包装成了 `link:`（或任何指向本地路径的 specifier），加载器于是
+从**工作区 checkout** 导入它。而 `link:` **不会安装被链接包自己的依赖** —— 工作区里
+没有可解析的 `@deepseek-ai/schemastery`，静态 `import` 在模块求值阶段就抛错，而加载器
+对挂载失败的处理是**中止整个 profile**，于是一个插件的缺失依赖把整个 harness 拖死。
+
+**修法**（两层）：
+
+1. 安装方式：必须用已发布的 specifier，不能用 `link:` 或本地路径。
+
+   ```bash
+   dsh plugin --profile web add github:fuzz1og/dsh-font-settings
+   ```
+
+2. 插件侧（0.4.3）：`@deepseek-ai/schemastery` 改为**首次使用时惰性解析**，模块里不再
+   有静态 import。于是本模块的求值永不失败：解析不到时 `ui-font` 命名空间不注册、
+   `/font-settings` 返回 503、并**只警告一次**说明原因——插件变为惰性，harness 照常
+   启动。`test/host-boot.test.mjs` 锁住这个不变量：宿主模块中不允许出现任何非 `node:`
+   的静态 import。
+
+隔离目录模拟依赖不可解析的验证结果：
+
+| 场景 | 模块加载 | 注册 settings | 警告 |
+| --- | --- | --- | --- |
+| 依赖缺失 | 不抛异常 | 否 | 1 条，含根因 |
+| 依赖正常 | 不抛异常 | 是 | 0 |
+
+> 排查同类问题：`ls -ld $DSH_HOME/profiles/<profile>/node_modules/<pkg>` —— 如果是指向
+> 工作区的 symlink，就是 `link:` 安装，改用发布的 specifier 重装。
+
 ## 工作原理
 
 | 环节 | 说明 |
