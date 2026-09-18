@@ -25,14 +25,34 @@ dsh plugin --profile web add github:fuzz1og/dsh-font-settings
 > ```
 > 新安装无需此步骤。
 
+## 0.4.2 适配说明
+
+- 针对 DSH `0.1.6-alpha.2` 核对，源码回归运行 `npm test`（无新增测试依赖）。
+- 增加 `--dsw-font-mono` 覆盖，补齐插件管理、任务、Agent 预设和文档预览等宽面。
+  此 token 去除终端别名家族并补 `monospace` 后备，避免附带终端字号缩放；
+  若选中的恰好是 Consolas / Menlo 等别名，这些面会使用剩余栈或通用等宽字体。
+- `dsh-settings` 由宿主注入，不直接 import，改为可选 peer，显式覆盖
+  `0.1.2-*` 与 `0.1.6-*` 已声明范围。可选仅指包安装；运行仍需要 `ctx.settings`。
+  `^0.1.2-alpha.2` 可以接受 `0.1.6` 稳定版，但不会接受 `0.1.6-alpha.2`；
+  不使用 `*` 冒充“匹配全部预发布”。后续新版本预发布仍须重新核对。
+- 本地源码测试通过不等于 profile 已安装或浏览器已加载，安装后重启 DSH 并刷新 GUI。
+
 ## 工作原理
 
 | 环节 | 说明 |
 | --- | --- |
 | 宿主半区 | 拥有 `ui-font` 设置命名空间（持久化进 `$DSH_HOME/settings.yaml`），提供三条同源路由：`GET/POST /font-settings` 读写设置、`GET /font-settings/fonts` 枚举已安装系统字体 |
-| 系统字体枚举 | 浏览器无法列出已安装字体，且系统显示名与 CSS 家族名常不一致——宿主扫描各平台字体目录，解析每个字体文件的 sfnt name 表（nameID 16/1 取家族名，nameID 4/6 取 `local()` 可用的 FullName/PostScript 名，并从 `OS/2`/`head` 取字重与斜体），再按**角色**为每个家族挑出终端真正会请求的 regular/bold 字面（见「字重」一节）；TTC 集合读取第一个 face；并行扫描 + 10 分钟缓存（过期条目先返回、后台重扫，启动时预热）。平台目录见下节 |
+| 系统字体枚举 | 浏览器无法列出已安装字体，且系统显示名与 CSS 家族名常不一致——宿主扫描各平台字体目录，解析每个字体文件的 sfnt name 表（nameID 16/1 取家族名，nameID 4/6 取 `local()` 可用的 FullName/PostScript 名，并从 `OS/2`/`head` 取字重与斜体），再按**角色**为每个家族挑出终端真正会请求的 regular/bold 字面（见「字重」一节）；TTC 集合读取第一个 face；并行扫描 + 10 分钟缓存（过期请求等待新扫描，启动预热与并发请求共用扫描；失败不延长缓存寿命）。平台目录见下节 |
 | 客户端半区 | 通过主题服务的 `overrideTokens()` 叠加两个根 CSS 变量（`--dsw-font-family` / `--ds-font-family-code`），所有 `--dsw-font-*` 排版 token 都引用它们；此外另注入一张 `@font-face` 别名表覆盖侧边栏终端的字体与字号（见下节） |
 | 依赖 | `webServer` + `@deepseek-ai/dsh-settings` + `@deepseek-ai/schemastery` |
+
+### 字体列表缓存与刷新
+
+- 页面每 10 分钟重新请求列表，窗口重新获得焦点时检查过期；后台标签页的定时器可能被浏览器延迟。
+- 「重新扫描字体」绕过客户端与 Host 列表缓存（`GET /font-settings/fonts?refresh=1`），并清空浏览器字体匹配探测缓存。字体安装、删除后可立即使用。
+- 探测结果也有 10 分钟 TTL；成功获取新列表后重新探测，而非永久保留“字体可用”的结论。
+- 扫描失败时按钮显示失败提示，页面暂保留上次列表以供参考，不冒充刷新成功；可以重试。
+- 这不能清除操作系统或浏览器进程内部的字体缓存；某些字体变更仍需重启浏览器。刷新列表不会更改已保存的字体选择。
 
 ## 终端字体覆盖（0.3.0+）
 
@@ -131,7 +151,10 @@ face，只能取最近的 250，终端就"太细"了。NotoSansM NFM 正是如�
 
 因为终端字号固定 13px，绝对 px 可以无损换算成比例：`size-adjust = 目标px ÷ 基准px`。
 基准优先取**当前活动终端真实渲染的字号**（从 DomRenderer 的 `.xterm-rows` 上读回），
-读不到时退回 13 —— 将来 dsh 若把这个字面量改掉，插件不需要跟着改。
+其次尝试 `.xterm-char-measure-element` 的测量字号，读不到有效正数时退回 13，并只警告一次。
+不读 `.xterm` / `.xterm-screen`，它们可能继承页面字号而不是终端字号。
+这仍是内部 DOM 依赖：每次 DSH / xterm 升级后应检查选择器和回退基准。
+终端挂载前写入的缩放比例不会自动重算；若默认基准变化，需打开终端后重新选择字号。
 
 兼容性：`size-adjust` 需要 Chrome/Edge 92+、Firefox 92+、Safari **17.0+**
 （Baseline 2023-09）。Safari 16 及更早会**忽略该描述符**——别名照常生效、只是字号
