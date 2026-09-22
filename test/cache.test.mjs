@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-// Settings registration is not involved in these routes; only schema construction runs.
-const z = { object: value => value, string: () => ({ default() {} }), number: () => ({ default() {} }) };
+// Schemastery stand-in: this module's Config is built at evaluation time, so the
+// harness must be able to resolve one. These routes never touch the schema.
+const z = { object: value => value, string: () => ({ default: () => ({ volatile: () => ({}) }) }), number: () => ({ default: () => ({ volatile: () => ({}) }) }) };
 
 const source = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8');
 const TTL = 10 * 60 * 1000;
@@ -19,10 +20,18 @@ function harness() {
   const context = {
     z, URL,
     Date: { now: () => now },
+    // The module resolves schemastery through createRequire(import.meta.url);
+    // only the enumeration seam is exercised here, so the schema is stand-in.
+    createRequire: () => name => {
+      if (name === '@deepseek-ai/schemastery') return { default: z };
+      throw new Error('unresolvable: ' + name);
+    },
+    process: { argv: [] },
     __scan: () => new Promise((resolve, reject) => scans.push({ resolve, reject })),
   };
   vm.runInNewContext(source
     .replace(/^import .*;$/gm, '')
+    .replace(/import\.meta\.url/g, '"file:///test/index.js"')
     .replace(/export (const|function) /g, '$1 ')
     .replace(/^export \{.*\};$/gm, '')
     // Tests drive the real module's enumeration seam, not the platform scan.

@@ -13,9 +13,12 @@ dsh plugin --profile web add github:fuzz1og/dsh-font-settings
 
 **重启 DSH 后生效。**
 
-> 兼容性：适配 dsh ≥ 0.1.2-alpha.2（客户端 store 从 `@deepseek-ai/dsh-client-store`
-> 取——`@deepseek-ai/dsh-client-runtime` 已移除；宿主侧 `settings.register`
-> 直接传命名空间字符串——`settingsNamespace()` 已移除）。
+> 兼容性：适配 dsh ≥ **0.1.7-alpha.1**。客户端 store 从
+> `@deepseek-ai/dsh-client-store` 取（`@deepseek-ai/dsh-client-runtime` 已移除）；
+> **宿主侧不再使用 `settings.register` / `settings.get(ns)`——这两个 API 在
+> 0.1.7-alpha.1 已从 `@deepseek-ai/dsh-settings` 移除。** 字体偏好改住本插件
+> 自己的 volatile `Config`，经 `settings.describe()` 读、`settings.mutate()` 写，
+> 详见下文「0.5.0 适配说明」。
 
 > 旧版（无 `dsh.bundle.patch`）需要手动在 `cordis.patch.yml` 插入挂载行：
 > ```yaml
@@ -25,16 +28,45 @@ dsh plugin --profile web add github:fuzz1og/dsh-font-settings
 > ```
 > 新安装无需此步骤。
 
-## 0.4.2 适配说明
+## 0.5.0 适配说明（dsh 0.1.7-alpha.1）
 
-- 针对 DSH `0.1.6-alpha.2` 核对，源码回归运行 `npm test`（无新增测试依赖）。
-- 增加 `--dsw-font-mono` 覆盖，补齐插件管理、任务、Agent 预设和文档预览等宽面。
-  此 token 去除终端别名家族并补 `monospace` 后备，避免附带终端字号缩放；
-  若选中的恰好是 Consolas / Menlo 等别名，这些面会使用剩余栈或通用等宽字体。
-- `dsh-settings` 由宿主注入，不直接 import，改为可选 peer，显式覆盖
-  `0.1.2-*` 与 `0.1.6-*` 已声明范围。可选仅指包安装；运行仍需要 `ctx.settings`。
-  `^0.1.2-alpha.2` 可以接受 `0.1.6` 稳定版，但不会接受 `0.1.6-alpha.2`；
-  不使用 `*` 冒充“匹配全部预发布”。后续新版本预发布仍须重新核对。
+dsh `0.1.7-alpha.1` 把设置模型改成 **Config 派生**：一个设置命名空间不再是一份
+可以自行注册的文档，而是 **profile 条目自身的 `Config`**。`SettingsForms` 上已不
+存在 `register()` 与 `get(ns)`：
+
+| API | ≤ 0.1.6-alpha.2 | 0.1.7-alpha.1 |
+| --- | --- | --- |
+| `settings.register(ns, schema)` | 有 | **已移除** |
+| `settings.get(ns)` | 有 | **已移除** |
+| `settings.describe()` | 有 | 有（改为按条目投影 `Config`） |
+| `settings.mutate(ns, ops, rev)` | 有 | 有 |
+
+因此字体偏好从「自注册命名空间 `ui-font`」迁到 **本条目自己的 `Config`**
+（条目 id `font-settings` 即命名空间键）：
+
+- **读**：`settings.describe()` 取出 `ns === 本条目 id` 的那一行，同时拿到
+  `value` 与 `revision`；
+- **写**：`settings.mutate(ns, ops, revision)`，用同一次读到的 revision 做栅栏。
+
+5 个字段全是 `.volatile()`：只有 volatile 字段能在不重启条目的情况下被 Loader
+直接提交进运行中的 `Config` 引用（`_commitVolatile`），而 `mutate` 也只接受
+volatile 路径。
+
+**持久化位置变了**：偏好不再写入 `$DSH_HOME/settings.yaml`，而是写入 profile 的
+Cordis patch（`$DSH_HOME/profiles/<name>/cordis.patch.yml`）。0.1.7 本身也把
+`settings.yaml` 退役了——启动时重命名为 `settings.yaml.imported` 并把各节并入
+profile 条目。
+
+**迁移旧值**：旧 `settings.yaml` 里的 `ui-font:` 一节会在启动时被并入 profile
+条目；若该节未被接受，它只留在 `settings.yaml.imported` 中，在 GUI 里重选一次即可。
+
+- 针对 DSH `0.1.7-alpha.1` 核对，源码回归运行 `npm test`。
+- `@deepseek-ai/schemastery` 现在通过 **受保护的同步 `require`** 解析（先本包、
+  再运行中的 harness 安装），而不是 0.4.3 的「首次使用时动态 import」：Loader 在
+  **模块求值时**只读一次 `Config`（`dsh-app-boot` 的 `configOf`），晚到的 schema 会
+  让条目永远不可配置——而偏好现在就住在 `Config` 里。解析失败时 `Config` 导出为
+  `undefined`，路由答 503，harness 照常启动（「启动不可失败」的保证保留）。
+- 可选 peer 收紧为 `@deepseek-ai/dsh-settings: ^0.1.7-alpha.1`。
 - 本地源码测试通过不等于 profile 已安装或浏览器已加载，安装后重启 DSH 并刷新 GUI。
 
 ## 依赖缺失不再拖垮 DSH 启动（0.4.3+）
@@ -59,11 +91,19 @@ Cannot find package '@deepseek-ai/schemastery' imported from /home/tomy/daily/ds
    dsh plugin --profile web add github:fuzz1og/dsh-font-settings
    ```
 
-2. 插件侧（0.4.3）：`@deepseek-ai/schemastery` 改为**首次使用时惰性解析**，模块里不再
-   有静态 import。于是本模块的求值永不失败：解析不到时 `ui-font` 命名空间不注册、
-   `/font-settings` 返回 503、并**只警告一次**说明原因——插件变为惰性，harness 照常
-   启动。`test/host-boot.test.mjs` 锁住这个不变量：宿主模块中不允许出现任何非 `node:`
-   的静态 import。
+2. 插件侧：`@deepseek-ai/schemastery` 经**受保护的同步 `require`** 解析（先本包、
+   再运行中的 harness 安装），模块里没有静态 import。于是本模块的求值永不失败：
+   解析不到时 `Config` 导出为 `undefined`、条目没有可配置字段、`/font-settings` 返回
+   503、并**只警告一次**说明原因——插件变为惰性，harness 照常启动。
+
+   > 0.4.3 用的是「首次使用时动态 `import`」。0.5.0 改回求值期解析，因为 0.1.7 的
+   > Loader 在**模块求值时**只读一次 `Config`（`dsh-app-boot` 的 `configOf`），而偏好
+   > 现在就住在 `Config` 里——晚到的 schema 会让条目永远不可配置。第二个解析基址
+   > （`process.argv[1]`，即 dsh 自身的入口）正是让 `link:`/工作区安装也能解析成功
+   > 的关键：那条路径的 `node_modules` 看不到 harness 的依赖。
+
+   `test/host-boot.test.mjs` 锁住这些不变量：宿主模块中不允许出现任何非 `node:` 的
+   静态 import，且不得再调用已被移除的 `settings.register` / `settings.get`。
 
 隔离目录模拟依赖不可解析的验证结果：
 
@@ -79,7 +119,7 @@ Cannot find package '@deepseek-ai/schemastery' imported from /home/tomy/daily/ds
 
 | 环节 | 说明 |
 | --- | --- |
-| 宿主半区 | 拥有 `ui-font` 设置命名空间（持久化进 `$DSH_HOME/settings.yaml`），提供三条同源路由：`GET/POST /font-settings` 读写设置、`GET /font-settings/fonts` 枚举已安装系统字体 |
+| 宿主半区 | 拥有本条目自己的 volatile `Config`（条目 id `font-settings` 即设置命名空间键；持久化进 profile 的 `cordis.patch.yml`），提供三条同源路由：`GET/POST /font-settings` 经 `settings.describe()` / `settings.mutate()` 读写偏好、`GET /font-settings/fonts` 枚举已安装系统字体 |
 | 系统字体枚举 | 浏览器无法列出已安装字体，且系统显示名与 CSS 家族名常不一致——宿主扫描各平台字体目录，解析每个字体文件的 sfnt name 表（nameID 16/1 取家族名，nameID 4/6 取 `local()` 可用的 FullName/PostScript 名，并从 `OS/2`/`head` 取字重与斜体），再按**角色**为每个家族挑出终端真正会请求的 regular/bold 字面（见「字重」一节）；TTC 集合读取第一个 face；并行扫描 + 10 分钟缓存（过期请求等待新扫描，启动预热与并发请求共用扫描；失败不延长缓存寿命）。平台目录见下节 |
 | 客户端半区 | 通过主题服务的 `overrideTokens()` 叠加两个根 CSS 变量（`--dsw-font-family` / `--ds-font-family-code`），所有 `--dsw-font-*` 排版 token 都引用它们；此外另注入一张 `@font-face` 别名表覆盖侧边栏终端的字体与字号（见下节） |
 | 依赖 | `webServer` + `@deepseek-ai/dsh-settings` + `@deepseek-ai/schemastery` |

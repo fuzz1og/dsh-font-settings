@@ -1,6 +1,6 @@
 {
   "name": "dsh-font-settings",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "WebUI plugin: per-user font preferences (UI font + code font) as a Settings \u2192 General row, with cross-platform system-font enumeration (Windows / WSL / Linux / macOS)",
   "type": "module",
   "main": "lib/index.js",
@@ -32,12 +32,15 @@
   },
   "peerDependencies": {
     "react": "^18.2.0",
-    "@deepseek-ai/dsh-settings": "^0.1.2-alpha.2 || ^0.1.6-alpha.2"
+    "@deepseek-ai/dsh-settings": "^0.1.7-alpha.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-settings": { "optional": true }
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "engines": {
+    "dsh": "^0.1.7-alpha.1"
   }
 }
