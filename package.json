@@ -1,7 +1,7 @@
 {
   "name": "dsh-font-settings",
-  "version": "0.5.2",
-  "description": "WebUI plugin: per-user font preferences (UI font + code font) as a Settings \u2192 General row, with cross-platform system-font enumeration (Windows / WSL / Linux / macOS)",
+  "version": "0.6.0",
+  "description": "WebUI plugin: per-device font preferences (UI font + code font + terminal size) as a Settings \u2192 General row. Free-text CSS stack first, curated candidates, and opt-in local-font enumeration via queryLocalFonts()",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -37,6 +37,7 @@
     "compatibility": {
       "dsh": ">=0.1.7-alpha.1 <0.2.0",
       "dshReleases": {
+        "0.1.6-alpha.2": "incompatible",
         "0.1.7-alpha.1": "compatible",
         "0.1.7-alpha.2": "compatible"
       },
