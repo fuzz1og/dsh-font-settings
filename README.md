@@ -13,12 +13,15 @@ dsh plugin --profile web add github:fuzz1og/dsh-font-settings
 
 **重启 DSH 后生效。**
 
-> 兼容性：适配 dsh ≥ **0.1.7-alpha.1**。客户端 store 从
+> 兼容性：适配 dsh **`>=0.1.7-alpha.1 <0.2.0`**，逐版本声明见
+> `package.json` 的 `dsh.compatibility.dshReleases`（`0.1.7-alpha.1` 与
+> `0.1.7-alpha.2` = `compatible`）；Node.js 要求 **`>=18.17.0`**。客户端 store 从
 > `@deepseek-ai/dsh-client-store` 取（`@deepseek-ai/dsh-client-runtime` 已移除）；
 > **宿主侧不再使用 `settings.register` / `settings.get(ns)`——这两个 API 在
 > 0.1.7-alpha.1 已从 `@deepseek-ai/dsh-settings` 移除。** 字体偏好改住本插件
 > 自己的 volatile `Config`，经 `settings.describe()` 读、`settings.mutate()` 写，
-> 详见下文「0.5.0 适配说明」。
+> 详见下文「0.5.0 适配说明」。权限、依赖、外部服务与失败边界见
+> 「[上架声明](#上架声明依赖权限外部服务与失败边界052)」。
 
 > 旧版（无 `dsh.bundle.patch`）需要手动在 `cordis.patch.yml` 插入挂载行：
 > ```yaml
@@ -27,6 +30,23 @@ dsh plugin --profile web add github:fuzz1og/dsh-font-settings
 >       name: 'dsh-font-settings'
 > ```
 > 新安装无需此步骤。
+
+## 0.5.2：DSH STORE 固定源码契约修复
+
+对应 DSH STORE 自动检查（issue「作者修复请求：fuzz1og/dsh-font-settings」）的确定性原因，
+本版本只改 manifest/文档/验收工具，不改运行时行为：
+
+- 补 `repository`/`homepage`/`bugs`，指向 canonical GitHub 仓库
+  `https://github.com/fuzz1og/dsh-font-settings`；
+- 补 `engines.node`（`>=18.17.0`）与 `dsh.compatibility`（DSH 范围 + 逐版本
+  `dshReleases`），与 `engines.dsh` 一致；
+- 0.4.3 起已移除运行期 `dependencies`（`schemastery` 转为 optional peer），
+  本版本确认 `dependencies`/`optionalDependencies`/生命周期脚本均为空；
+- README 增加「上架声明：权限、依赖、外部服务与失败边界」；
+- 新增一次性 Profile 安装/启动/卸载验收脚本与固定源码契约回归测试。
+
+剩余 files / network / credentials 信号是插件真实且必要的能力，按 DSH STORE 策略应保持
+`user-reviewed`（逐次本机风险审查），不适用 `source-verified` 自动批准。
 
 ## 0.5.0 适配说明（dsh 0.1.7-alpha.1）
 
@@ -273,6 +293,108 @@ WSL 细节：
   会在列表里标「浏览器不可见」。
 - 跨 9p 读文件较慢：扫描按 8 路并行，缓存 10 分钟，过期后先返回旧列表并后台重扫，
   插件启动时也会预热一次，正常情况下打开选字面板无感。
+
+## 上架声明：依赖、权限、外部服务与失败边界（0.5.2+）
+
+本节是写给 DSH STORE 自动化与人工复核的显式声明，用于避免把「源码里没搜到」当成
+「不会访问」。对应 DSH STORE 固定 Commit 检查中的依赖、权限与运行文件项。
+
+### 依赖
+
+- **无运行期 `dependencies` / `optionalDependencies` / `bundledDependencies`**：
+  `package.json` 不声明这三个字段，因此没有需要单独供应链复核的必装第三方包。
+- `peerDependencies` 只声明**宿主已经提供**的模块，不打进本包、也不由本包安装：
+  - `react@^18.2.0`：浏览器客户端基座；
+  - `@deepseek-ai/dsh-settings@^0.1.7-alpha.1`（optional peer）：宿主设置服务；
+  - `@deepseek-ai/schemastery@^3.18.3`（optional peer）：构建 volatile `Config` 的 schema 库。
+- **无生命周期脚本**：不声明 `preinstall`/`install`/`postinstall`/`prepare`。
+  `scripts.test`、`scripts.verify:disposable-profile` 只在本地或 CI 手动运行，不参与安装。
+- 宿主模块**不使用静态 import 引入任何插件依赖**（缺失依赖不能拖垮 DSH 启动）。
+
+### 权限
+
+| 能力 | 使用情况 | 范围 |
+| --- | --- | --- |
+| 文件 | **只读** | 系统字体目录（见「平台支持」）与 WSL 的 `/etc/wsl.conf`（仅取 `[automount] root`）；只解析字体文件的 sfnt name 表。偏好值的落盘由宿主的 settings 服务写入 profile 的 Cordis patch，插件自身不写任何文件。 |
+| 网络 | **仅同源** | 客户端只 `fetch` 宿主自身的 `/font-settings`、`/font-settings/fonts` 两条同源路由；宿主侧不发起任何出站请求。 |
+| 命令 | **无** | 不 import `child_process`，不 `exec`/`spawn`/`fork`。 |
+| 凭据 | **无** | 不读 keychain、OAuth、token、密码，不访问会话或用户凭据。仅读取 `%WINDIR%`、`%LOCALAPPDATA%`、`$XDG_DATA_HOME` 三个**路径类**环境变量来定位字体目录，不读取、不缓存、不外发任何凭据。 |
+
+> DSH STORE 的固定源码策略会把 `node:fs`、`fetch(`、`process.env` 一律计为
+> files / network / credentials 信号。本插件这三项能力真实且必要（浏览器无法自行
+> 枚举系统字体），因此按策略应归入 `user-reviewed`：安装时逐次展示风险并由使用者确认，
+> 而不是 `source-verified`。本节的目的是把权限讲清楚，不是宣称低风险。
+
+### 外部服务
+
+- 不访问任何外部服务、CDN、字体 API、Webhook 或遥测端点。
+- 不收集、不缓存、不外发任何用户数据；字体列表只缓存在宿主进程内存里（TTL 10 分钟）。
+
+### 失败边界
+
+- **缺 `@deepseek-ai/schemastery`**（或版本过旧无法建 volatile schema）：`Config` 导出为
+  `undefined`，`/font-settings` 答 503，**DSH 启动不受影响**（0.4.3+ 的「启动不可失败」保证）。
+- **缺 `@deepseek-ai/dsh-settings`**：同上，路由答 503。
+- **字体目录不存在、不可读或无权限**：列表为空，客户端回退到自定义 `font-family` 输入框，
+  不抛错、不中断启动。
+- **单个字体文件损坏或不是 sfnt**：跳过该文件，其余字体照常返回。
+- **非 web 平台**：客户端不注册，宿主侧不影响启动。
+
+### 兼容范围
+
+| 维度 | 声明 |
+| --- | --- |
+| DSH | `>=0.1.7-alpha.1 <0.2.0`（`engines.dsh` 与 `dsh.compatibility.dsh` 一致） |
+| 逐版本兼容 | `dsh.compatibility.dshReleases`：`0.1.7-alpha.1` = `compatible`，`0.1.7-alpha.2` = `compatible` |
+| Node.js | `>=18.17.0`（`engines.node`；使用 ESM、`node:fs/promises` 与 `node --test`） |
+| Profile / 平台 | `dsh.client.platform = web`，`dsh.compatibility.profiles = ["web"]` |
+| 许可证 | MIT（仓库 `LICENSE`，与 GitHub 仓库 license 元数据一致） |
+
+范围声明不是真实 Profile 验收；逐版本的安装/启动/卸载证据见下一节。
+
+## 一次性 Profile 验收（安装 / 启动 / 卸载）
+
+`test/verify-disposable-profile.mjs` 在**一次性 `DSH_HOME`（`mkdtemp` 临时目录）**内跑完整生命周期，
+绝不读写真实 `~/.dsh`：
+
+```bash
+npm run verify:disposable-profile
+```
+
+脚本依次执行并断言：
+
+1. `DSH_HOME=<tmp> dsh plugin --profile font-settings-evidence add <repo>` —— 安装成功，
+   profile 的 `dsh.profile.bundles` 出现 `dsh-font-settings`；
+2. `DSH_HOME=<tmp> dsh --profile font-settings-evidence --dump-config` —— 配置合成与冷启动
+   成功，组合树里出现**唯一**挂载条目 `- id: font-settings` / `name: dsh-font-settings`；
+3. `import('<repo>/lib/index.js')` —— 宿主模块冷导入成功（模块求值不抛错）；
+4. `DSH_HOME=<tmp> dsh plugin --profile font-settings-evidence remove dsh-font-settings` ——
+   卸载成功，再次 `--dump-config` 时该条目消失；
+5. 结束后删除临时 `DSH_HOME`。
+
+本机实测（node v24.10.0 / dsh 0.1.7-alpha.2，`npm run verify:disposable-profile`）：
+
+```
+VERIFY_DISPOSABLE_PROFILE_OK
+install   exit=0  bundles=["@deepseek-ai/dsh-base","dsh-font-settings"]
+start     exit=0  entryId=font-settings  entryIdCount=1
+hostImport exit=0 result=HOST_IMPORT_OK
+uninstall exit=0  bundles=["@deepseek-ai/dsh-base"]  entryPresentAfterRemove=false
+```
+
+> 该证据只覆盖一次性 Profile 的安装、配置合成/冷启动与卸载，**不**覆盖浏览器渲染、
+> 真实 Profile 安装或真实用户数据。
+
+## 固定源码契约回归（`test/manifest-contract.test.mjs`）
+
+`npm test` 会一并校验 DSH STORE 自动策略的作者侧契约，防止回归：
+
+- manifest `repository` 归一化后等于 canonical GitHub 仓库；
+- `files` 显式列出可分发文件；Bundle Patch 只挂载一个自有条目 `font-settings`；
+- `engines.node`、`engines.dsh` 与 `dsh.compatibility.dsh` 显式声明且一致，
+  `dshReleases` 至少有一条精确 `compatible`；
+- 无生命周期脚本、无运行期/可选依赖、无 bundled 依赖；
+- 客户端声明 `platform: web`。
 
 ## License
 

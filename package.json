@@ -1,6 +1,6 @@
 {
   "name": "dsh-font-settings",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "WebUI plugin: per-user font preferences (UI font + code font) as a Settings \u2192 General row, with cross-platform system-font enumeration (Windows / WSL / Linux / macOS)",
   "type": "module",
   "main": "lib/index.js",
@@ -14,6 +14,14 @@
     "lib"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fuzz1og/dsh-font-settings.git"
+  },
+  "homepage": "https://github.com/fuzz1og/dsh-font-settings#readme",
+  "bugs": {
+    "url": "https://github.com/fuzz1og/dsh-font-settings/issues"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -25,10 +33,21 @@
         "@deepseek-ai/dsh-client-ui-theme"
       ],
       "platform": "web"
+    },
+    "compatibility": {
+      "dsh": ">=0.1.7-alpha.1 <0.2.0",
+      "dshReleases": {
+        "0.1.7-alpha.1": "compatible",
+        "0.1.7-alpha.2": "compatible"
+      },
+      "profiles": [
+        "web"
+      ]
     }
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "verify:disposable-profile": "node test/verify-disposable-profile.mjs"
   },
   "peerDependencies": {
     "react": "^18.2.0",
@@ -40,6 +59,7 @@
     "@deepseek-ai/schemastery": { "optional": true }
   },
   "engines": {
-    "dsh": "^0.1.7-alpha.1"
+    "node": ">=18.17.0",
+    "dsh": ">=0.1.7-alpha.1 <0.2.0"
   }
 }
