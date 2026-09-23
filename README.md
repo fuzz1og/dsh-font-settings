@@ -122,6 +122,47 @@ dsh plugin --profile web remove dsh-font-settings
 DSH STORE 的兼容性策略只看官方最新 3 个 release；当前窗口为 `0.1.7-alpha.2` / `0.1.7-alpha.1` / `0.1.6-alpha.2`，
 矩阵中已有 2 个 `compatible`，满足 `requiredCompatibleReleases: 1`。
 
+### 侧边终端字体的生效条件
+
+侧边终端用写死的字体栈构造 xterm，只能靠 `@font-face` + `local()` 别名改写；
+而 `local()` 只认 **FullName / PostScript 名**（Chromium 实测：family 名和 typographic family 名都不认）。
+**满足下面任意一条即生效：**
+
+| 路径 | 条件 | 典型值 |
+| --- | --- | --- |
+| 直接生效（无需读取） | 输入的值等于该字体的 FullName 或 PostScript 名 | `Consolas`（family=fullName=postScript）、`Cascadia Code Regular`、`CascadiaCode-Roman` |
+| 读取后生效（推荐） | 点过「读取本机字体」，且 LFA 报出的 family 与输入值一致 | `Hack Nerd Font`、`JetBrainsMono Nerd Font`、`Maple Mono Normal NL NF CN`、`NotoSansM Nerd Font Mono` |
+
+**为什么读取后这些 Nerd Font 都能生效**：Chromium 的 `FontData.family` 取的是 **typographic family（nameID 16）**，
+没有 nameID 16 时才取 nameID 1——这正是插件存的 / 你输入的那个值。本机实测（WSL Chromium）：
+
+| 字体 | nameID 1 | nameID 16 | LFA 报出的 family | `local()` 实际能匹配的名字 |
+| --- | --- | --- | --- | --- |
+| Hack Nerd Font | `Hack Nerd Font` | 无 | nameID 1 | `Hack Nerd Font Regular` / `HackNF-Regular` |
+| JetBrainsMono Nerd Font | `JetBrainsMono NF` | `JetBrainsMono Nerd Font` | **nameID 16** | `JetBrainsMono NF Regular` / `JetBrainsMonoNF-Regular` |
+| Maple Mono Normal NL NF CN | `Maple Mono Normal NL NF CN` | 无 | nameID 1 | `… Regular` / `MapleMonoNormalNL-NF-CN-Regular` |
+| NotoSansM Nerd Font Mono | `NotoSansM NFM` | `NotoSansM Nerd Font Mono` | **nameID 16** | `NotoSansM NFM Reg` / `NotoSansMNFM-Reg` |
+| DejaVu Sans Condensed / Candara Light / DengXian Light | `… Condensed` / `… Light` | `DejaVu Sans` / `Candara` / `DengXian` | **nameID 16**（nameID 1 的名字在 LFA 里根本不存在） | — |
+
+对照：`local()` 对 family / typographic family 名一律不匹配（FontFace API 直接判定）——
+`Cascadia Code` ❌、`Mononoki Nerd Font` ❌、`DejaVu Sans Condensed` ❌；
+而 `Cascadia Code Regular` / `CascadiaCode-Roman`、`Mononoki Nerd Font Regular` / `MononokiNF-Regular` ✅。
+
+**仍未生效的情况**：
+
+- 没读过本机字体，且输入的是 family / typographic family 名（最常见）。
+- 字体不在浏览器可见范围：Chromium 按进程枚举字体，读取之后新装的字体、浏览器看不到的用户字体都不会出现。
+- 自定义栈只看**第一个** family；写成 `'A', 'B'` 时只按 `A` 找。
+- 非 Chromium（Firefox / Safari / Chrome Android）没有 LFA，只能走"直接生效"那条路。
+- 读取本身需要安全上下文（HTTPS / localhost）+ 手势 + 授权。
+
+补充：界面 / 代码面的主题覆盖（`--dsw-font-family` / `--ds-font-family-code`）**始终生效**，与终端无关；
+终端字号依附在同一套别名上，别名 face 不生效时字号缩放也不生效。
+
+根因、候选修复（通过宿主组件实例调用 xterm 官方 `term.options.fontFamily`）与风险评估见
+[docs/terminal-font-research.md](docs/terminal-font-research.md)；该修复依赖 React 内部结构，并会触发 DSH STORE 的
+`protectedDsh` 文本信号，暂不实施。
+
 - 非 Chromium 没有下拉枚举，请用主路径或 Tier 1。
 - 本机枚举需要安全上下文：纯 HTTP 的 LAN 访问下 API 不存在（按「不支持」置灰）。
 - `local()` 别名依赖浏览器能匹配到该字体；Chrome「Limiting Access to Local Fonts」提案会进一步
